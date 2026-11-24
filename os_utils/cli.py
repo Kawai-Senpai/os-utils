@@ -10,6 +10,7 @@ from os_utils.features import (
     git,
     nvidia_docker,
     packages,
+    privacy,
     processes,
     python_tools,
     services,
@@ -48,6 +49,7 @@ def main() -> None:
         (f"{console.emoji('system', '[SYS]')} Swap space (Linux)", swap.menu),
         (f"{console.emoji('system', '[SYS]')} Startup management", startup.menu),
         (f"{console.emoji('system', '[SYS]')} Service control", services.menu),
+        (f"{console.emoji('security', '[S]')} Personal data and device handoff", privacy.menu),
     ]
 
     software_items = [
@@ -83,12 +85,12 @@ def main() -> None:
         choice = select_from_list(console, "Choose an option", options, allow_back=False)
         if choice is None:
             break
-        label, handler = menu_items[choice]
+        _, handler = menu_items[choice]
         if handler is None:
             console.info("Goodbye.")
             break
         try:
-            handler(ctx)
+            handler()
         except KeyboardInterrupt:
             console.warn("Action canceled.")
         except Exception as exc:  # pragma: no cover - defensive
