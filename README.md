@@ -58,6 +58,8 @@ Open **System and Startup → Personal data and device handoff**. Start with **R
 4. When prompted, confirm opening Windows Recovery. In Settings, choose **Rebuild PC** under **Rebuild this PC**. In Cloud rebuild, choose **Remove & sanitize**, then **All disks** if prompted and you intend to erase every disk shown. Review the targets, then select **Sanitize and install**.
 5. Keep the PC plugged in until Windows finishes. If **Remove & sanitize** is missing, blocked, or fails, use IT's approved drive-sanitization method.
 
+Both shred options report scan activity and show a progress bar during the overwrite. The bar tracks bytes written, or files deleted if all files are empty. The status also reports elapsed time and counts for deleted, failed, and skipped files. Redirected output receives periodic status lines. Windows shows its own progress after you start sanitization in Recovery.
+
 Windows handles drive sanitization and reinstalls the OS. The feature depends on Windows version, hardware, and management policy. [Microsoft Cloud rebuild instructions](https://support.microsoft.com/en-us/windows/experience/backup-recovery/cloud-rebuild)
 
 <details>

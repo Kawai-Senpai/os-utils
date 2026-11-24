@@ -1,7 +1,9 @@
 import os
+import shutil
 import stat
 import sys
 from pathlib import Path
+from time import monotonic
 from typing import Callable, Optional
 
 from os_utils.core.console import Console
@@ -58,6 +60,72 @@ _BROAD_FOLDERS = {
 }
 
 
+class _ProgressLine:
+    def __init__(self) -> None:
+        self.interactive = sys.stdout.isatty()
+        self.interval = 0.25 if self.interactive else 2.0
+        self.last_update = float("-inf")
+        self.width = max(1, shutil.get_terminal_size(fallback=(100, 24)).columns - 1)
+        self.line_open = False
+
+    def show(self, message: str, *, force: bool = False) -> None:
+        now = monotonic()
+        if not force and now - self.last_update < self.interval:
+            return
+        self.last_update = now
+        if self.interactive:
+            print("\r" + message[:self.width].ljust(self.width), end="", flush=True)
+            self.line_open = True
+        else:
+            print(message, flush=True)
+
+    def close(self) -> None:
+        if self.line_open:
+            print(flush=True)
+            self.line_open = False
+
+
+class _ShredProgress:
+    def __init__(self, files: dict[Path, os.stat_result], *, skipped: int = 0) -> None:
+        self.total_files = len(files)
+        self.total_bytes = sum(info.st_size for info in files.values())
+        self.written = 0
+        self.deleted = 0
+        self.failed = 0
+        self.skipped = skipped
+        self.current = ""
+        self.started = monotonic()
+        self.line = _ProgressLine()
+
+    def update(self, stage: str, *, force: bool = False) -> None:
+        fraction = (
+            self.written / self.total_bytes if self.total_bytes else self.deleted / self.total_files
+        )
+        filled = int(fraction * 10)
+        bar = "#" * filled + "-" * (10 - filled)
+        counts = (
+            f"{self.deleted:,}/{self.total_files:,} del {self.failed:,} fail {self.skipped:,} skip"
+            if self.line.interactive else
+            f"{self.deleted:,}/{self.total_files:,} deleted, {self.failed:,} failed, {self.skipped:,} skipped"
+        )
+        self.line.show(
+            f"[{bar}] {fraction:5.0%} | "
+            f"{self.written / _CHUNK_SIZE:,.2f}/{self.total_bytes / _CHUNK_SIZE:,.2f} MiB | "
+            f"{counts} | "
+            f"{monotonic() - self.started:.0f}s | {stage} {self.current}".rstrip(),
+            force=force,
+        )
+
+    def write(self, count: int) -> None:
+        self.written += count
+        self.update("Overwriting")
+
+    def finish(self, status: str) -> None:
+        self.current = ""
+        self.update(status, force=True)
+        self.line.close()
+
+
 def _checked_path(path: Path, home: Path) -> os.stat_result:
     home_info = home.lstat()
     current = Path(path.anchor)
@@ -106,28 +174,44 @@ def _collect_files(
     *,
     on_skip: Optional[Callable[[Path, Exception], None]] = None,
     protected_paths: tuple[Path, ...] = (),
+    label: str = "",
 ) -> None:
     pending = [target]
-    while pending:
-        path = pending.pop()
-        try:
-            _target(str(path), home)
-            info = _checked_path(path, home)
-            if any(path.is_relative_to(protected) for protected in protected_paths):
-                raise ValueError("Needed by the running program. Windows Recovery can erase it later.")
-            if stat.S_ISDIR(info.st_mode):
-                pending.extend(path.iterdir())
-            else:
-                _file_identity(info)
-                files[path] = info
-        except (OSError, ValueError) as exc:
-            if on_skip is None:
-                raise
-            if path != target or not isinstance(exc, FileNotFoundError):
-                on_skip(path, exc)
+    inspected = 0
+    found = len(files)
+    progress = _ProgressLine()
+    scan_label = label or repr(str(target))
+    try:
+        while pending:
+            path = pending.pop()
+            try:
+                _target(str(path), home)
+                info = _checked_path(path, home)
+                inspected += 1
+                progress.show(f"Scanning {scan_label} | {inspected:,} checked | {len(files) - found:,} files found")
+                if any(path.is_relative_to(protected) for protected in protected_paths):
+                    raise ValueError("Needed by the running program. Windows Recovery can erase it later.")
+                if stat.S_ISDIR(info.st_mode):
+                    pending.extend(path.iterdir())
+                else:
+                    _file_identity(info)
+                    files[path] = info
+            except (OSError, ValueError) as exc:
+                if on_skip is None:
+                    raise
+                if path != target or not isinstance(exc, FileNotFoundError):
+                    progress.close()
+                    on_skip(path, exc)
+    finally:
+        progress.close()
 
 
-def _overwrite_and_delete(path: Path, home: Path, planned: os.stat_result) -> None:
+def _overwrite_and_delete(
+    path: Path, home: Path, planned: os.stat_result, progress: _ShredProgress
+) -> None:
+    first_file = not progress.current
+    progress.current = repr(path.name if progress.line.interactive else str(path.relative_to(home)))
+    progress.update("Checking", force=first_file)
     identity = _file_identity(planned)
     if _file_identity(_checked_path(path, home)) != identity:
         raise ValueError("File changed since preview.")
@@ -147,6 +231,8 @@ def _overwrite_and_delete(path: Path, home: Path, planned: os.stat_result) -> No
             if not written:
                 raise OSError("Overwrite stopped before reaching the original file size.")
             remaining -= written
+            progress.write(written)
+        progress.update("Flushing")
         os.fsync(handle.fileno())
         overwritten = _file_identity(os.fstat(handle.fileno()))
     current = _file_identity(_checked_path(path, home))
@@ -154,7 +240,9 @@ def _overwrite_and_delete(path: Path, home: Path, planned: os.stat_result) -> No
     same_file = current[:3] == overwritten[:3] if os.name == "nt" else current == overwritten
     if not same_file or current[2] != planned.st_size:
         raise ValueError("File changed during overwrite. Deletion skipped.")
+    progress.update("Deleting")
     path.unlink()
+    progress.deleted += 1
 
 
 def windows_automatic_preclean(console: Console, *, home: Optional[Path] = None) -> Optional[bool]:
@@ -162,8 +250,6 @@ def windows_automatic_preclean(console: Console, *, home: Optional[Path] = None)
     home = Path.home() if home is None else home
     files: dict[Path, os.stat_result] = {}
     skipped = 0
-    failed = 0
-    completed = 0
 
     def report_skip(path: Path, error: Exception) -> None:
         nonlocal skipped
@@ -181,10 +267,15 @@ def windows_automatic_preclean(console: Console, *, home: Optional[Path] = None)
             Path(sys.prefix).resolve(),
             Path(sys.base_prefix).resolve(),
         })
-        for relative in _WINDOWS_PRE_CLEAN_PATHS:
+        for index, relative in enumerate(_WINDOWS_PRE_CLEAN_PATHS, start=1):
             found: dict[Path, os.stat_result] = {}
             _collect_files(
-                home / relative, home, found, on_skip=report_skip, protected_paths=protected_paths
+                home / relative,
+                home,
+                found,
+                on_skip=report_skip,
+                protected_paths=protected_paths,
+                label=f"{index}/{len(_WINDOWS_PRE_CLEAN_PATHS)} {relative}",
             )
             if found:
                 size = sum(info.st_size for info in found.values())
@@ -207,22 +298,25 @@ def windows_automatic_preclean(console: Console, *, home: Optional[Path] = None)
         console.info("Canceled. No files changed.")
         return None
 
-    console.info("Overwriting and deleting files. This can take several minutes or longer.")
+    console.info("Overwriting and deleting files. The bar tracks bytes written, or files deleted if all are empty.")
+    progress = _ShredProgress(files, skipped=skipped)
+    progress.update("Starting", force=True)
     try:
         for path, planned in files.items():
             try:
-                _overwrite_and_delete(path, home, planned)
+                _overwrite_and_delete(path, home, planned, progress)
             except (OSError, ValueError) as exc:
-                failed += 1
+                progress.failed += 1
+                progress.line.close()
                 console.warn(f"Could not finish {str(path)!r}. {exc}")
-            else:
-                completed += 1
     except KeyboardInterrupt:
-        console.warn(f"Canceled after deleting {completed:,} files. A file may be partially overwritten.")
+        progress.finish("Canceled")
+        console.warn(f"Canceled after deleting {progress.deleted:,} files. A file may be partially overwritten.")
         return None
 
-    console.info(f"Pre-clean finished. Deleted {completed:,}, failed {failed:,}, skipped {skipped:,}.")
-    return failed == 0 and skipped == 0
+    progress.finish("Pre-clean finished with issues" if progress.failed or skipped else "Pre-clean finished")
+    console.info(f"Pre-clean results. Deleted {progress.deleted:,}, failed {progress.failed:,}, skipped {skipped:,}.")
+    return progress.failed == 0 and skipped == 0
 
 
 def preclean(console: Console, *, home: Optional[Path] = None) -> bool:
@@ -266,20 +360,26 @@ def preclean(console: Console, *, home: Optional[Path] = None) -> bool:
         console.info("Canceled. No files changed.")
         return False
 
-    completed = 0
+    progress = _ShredProgress(files)
     path = next(iter(files))
+    progress.update("Rechecking preview", force=True)
     try:
         # Check the complete preview again before the first write.
-        for path, planned in files.items():
+        for index, (path, planned) in enumerate(files.items(), start=1):
+            progress.update(f"Rechecking {index:,}/{len(files):,}")
             if _file_identity(_checked_path(path, home)) != _file_identity(planned):
                 raise ValueError("File changed since preview.")
+        progress.update("Starting overwrite", force=True)
         for path, planned in files.items():
-            _overwrite_and_delete(path, home, planned)
-            completed += 1
+            _overwrite_and_delete(path, home, planned, progress)
     except (OSError, ValueError, KeyboardInterrupt) as exc:
-        console.error(f"Stopped at {str(path)!r} after deleting {completed} of {len(files)} files. {exc}")
+        if not isinstance(exc, KeyboardInterrupt):
+            progress.failed += 1
+        progress.finish("Stopped")
+        console.error(f"Stopped at {str(path)!r} after deleting {progress.deleted} of {len(files)} files. {exc}")
         console.warn("A file may have been partially overwritten. Review the remaining files before retrying.")
         return False
 
-    console.success(f"Overwrote and deleted {completed} files. Folder structure remains.")
+    progress.finish("Pre-clean finished")
+    console.success(f"Overwrote and deleted {progress.deleted} files. Folder structure remains.")
     return True

@@ -48,6 +48,7 @@ def _show_drives(console: Console, windows: bool) -> None:
 
 
 def _open_windows_recovery(console: Console) -> None:
+    console.info("Opening Windows Recovery settings. Windows reports progress after you start sanitization there.")
     try:
         os.startfile("ms-settings:recovery")
     except OSError as exc:
