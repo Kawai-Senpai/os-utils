@@ -1,113 +1,106 @@
 # OS Utils
 
-Menu-driven system utilities for Windows and Linux. This tool wraps common admin tasks behind clear prompts so you do not have to remember every command.
+**System tools for Windows and Linux, in one terminal menu.** Manage networking, services, packages, Git, and Python, or prepare a device for handoff.
 
-## What you can do
-
-Network and security
-- Wi-Fi password lookup (Windows netsh, Linux NetworkManager)
-- Set DNS to Cloudflare or reset to automatic
-- SSH install and management (service vs socket on Linux)
-- Firewall rules (Windows Defender Firewall, Linux UFW)
-- Domain blocking via hosts file
-
-System and startup
-- System specs
-- Swap file management (Linux only)
-- Startup management (Windows startup folder, registry Run, scheduled tasks; Linux autostart and systemd)
-- Service control (start/stop/enable/logs)
-- Personal data and device handoff (credential checklist, drive inventory, and OS recovery guidance)
-
-Software and processes
-- Package install, uninstall, and search (winget, apt, dnf, pacman)
-- Process inventory, listening ports, timers/scheduled tasks
-- Kill process by PID
-- NVIDIA drivers, Docker, and NVIDIA container toolkit (Linux)
-
-Developer tools
-- Git identity and credential helper setup
-- GitHub and GitLab SSH key creation with host aliases
-- Python interpreter inventory, venv creation, pip install, uninstall
+[Quick start](#quick-start) · [Tools](#tools) · [Device handoff](#device-handoff) · [Troubleshooting](#troubleshooting) · [Contributing](#contributing)
 
 ## Quick start
 
-1) Ensure Python 3.9+ is installed.
-2) (Optional) Install colored output:
+Download **Code → Download ZIP** from [the repository](https://github.com/Kawai-Senpai/os-utils) and extract the entire folder. If you already use Git, you can clone it instead.
 
-```bash
-pip install ultraprint
+```sh
+git clone https://github.com/Kawai-Senpai/os-utils.git
+cd os-utils
 ```
 
-3) Run the menu:
+| Platform | Open the menu | If Python is missing or too old |
+| --- | --- | --- |
+| **Windows** | Double-click **run.bat**. From PowerShell, run **.\run.bat**. | The launcher uses WinGet to install Python 3.13 for your account. Follow any installer prompts. |
+| **Linux** | Open a terminal in the extracted folder and run **sh run.sh**. | The launcher uses **apt-get**, **dnf**, or **pacman** to install Python. Enter your sudo password if prompted. |
 
-```bash
-python os_utils.py
+When **OS Utils** appears, press **Enter**, then type a menu number. Use **0** to go back in a submenu. Choose **Exit** from the main menu when you're done.
+
+<details>
+<summary>Run directly or enable colored output</summary>
+
+With Python 3.9 or newer already installed, run **python os_utils.py** on Windows or **python3 os_utils.py** on Linux. For optional colored output, install **ultraprint** into the same Python environment. The menu works with Python alone.
+
+```text
+Windows: python -m pip install ultraprint
+Linux:   python3 -m pip install ultraprint
 ```
 
-## Safety and privileges
+</details>
 
-Many actions require admin or root access. The tool will warn and refuse to run when elevation is required. Sensitive actions (DNS changes, Wi-Fi secrets, swap changes, firewall edits, hosts edits, package installs/uninstalls) ask for confirmation first.
+## Tools
 
-## Returning a device
+| Main menu | Available tools |
+| --- | --- |
+| **Network and Security** | Wi-Fi passwords, Cloudflare DNS, SSH setup, firewall management, and domain blocking through the hosts file. |
+| **System and Startup** | System specs, Linux swap, startup entries, services, and personal data and device handoff. |
+| **Software and Processes** | Package search, installation and removal, process and listener inventory, process termination, and Linux NVIDIA and Docker helpers. |
+| **Developer Tools** | Git identity and credential helper setup, GitHub and GitLab SSH aliases, Python interpreters, virtual environments, and pip packages. |
 
-Open **System and Startup → Personal data and device handoff**. Review personal data and sign-ins, then use the storage inventory to identify any additional drives that held local copies. For a company device, follow IT's approved handoff process and preserve work records as required.
+Start as your usual user. Features that need administrator or root privileges say so. On Windows, PowerShell backs several system tools, and WinGet backs package management. On Linux, package operations support APT, DNF, and Pacman. Service tools are designed for systemd distributions. Wi-Fi lookup needs NetworkManager, firewall management needs UFW, and NVIDIA or Docker support depends on the distribution.
 
-- **Windows:** Choose **Master Burn - wipe entire PC (Windows)** for an automatic pre-clean with no folder selection. It previews standard folders in the current Windows profile and default data locations for Chrome, Edge, Brave, Firefox, VS Code, Teams, Slack, Discord, Zoom, WhatsApp (Desktop and Beta), Signal, Telegram, classic Outlook, Thunderbird, Bitwarden, Git and SSH. Close apps and pause sync first. Type **SHRED AND WIPE** to overwrite and delete the files in the preview. The tool reports skipped or failed files. Custom paths, other profiles, and entries held only in Windows Credential Manager are outside this pass. For WhatsApp, use **Linked devices** on your phone to revoke the laptop's session. [WhatsApp unlink instructions](https://faq.whatsapp.com/834124628020911/)
-- **Windows Recovery:** After the pre-clean, Master Burn offers to open Recovery. Choose **Rebuild PC → Remove & sanitize → All disks** if prompted for disk scope. Review the target disks, then choose **Sanitize and install** in Windows. If **Remove & sanitize** is unavailable or fails, use the method approved by IT. [Microsoft Cloud rebuild](https://support.microsoft.com/en-us/windows/experience/backup-recovery/cloud-rebuild)
-- **Linux:** Use **Show storage devices** to identify drives, then follow **Review Linux drive sanitization steps**. Sanitization runs separately through the approved firmware or offline tool for the specific drive. [NIST media sanitization guidance](https://csrc.nist.gov/pubs/sp/800/88/r2/final)
+## Device handoff
 
-Master Burn also overwrites files in the current user's standard program folder, `AppData/Local/Programs`. Treat programs listed in the preview as unusable after the pre-clean. The pre-clean skips the running OS Utils files and Python environment so it can still open Recovery. Windows handles the erase of shared installations and Windows files on the selected disks.
+Open **System and Startup → Personal data and device handoff**. Start with **Review personal data and sign-ins** or **Show storage devices** to check the drives by model, serial number, and capacity.
 
-Use **Overwrite and delete selected personal files** for an optional pre-clean. Enter explicit files or folders inside your home directory, such as personal documents, a specific browser profile, app data, or a project .env file. Close the affected apps and turn off sync first. The tool previews every file, requires typed confirmation, and overwrites each file with random bytes before deleting it. Folder structure remains. Links, reparse points, and detected mounted storage stop the operation. On Windows, a completed pre-clean offers to open Recovery settings for manual confirmation.
+> [!CAUTION]
+> **Master Burn and selected-file shredding permanently erase local data.** On a work device, get IT approval and preserve required work records. Verify your backup and disconnect any drives you want to keep.
 
-OS Utils also opens Windows Recovery directly and displays read-only inventory and guidance. The native or offline tool handles erasure and reports its result. File overwrites alone can miss SSD remapped blocks, snapshots, and copies. Review cloud data and backups separately and revoke personal sessions from a trusted device.
+### Windows full-device wipe
 
-## Platform support
+1. Close browsers and other apps, pause file sync, and plug in the PC.
+2. Select **Master Burn - wipe entire PC (Windows)**. Read the automatic preview, especially if browsers, documents, or programs contain a mix of personal and work data.
+3. Type **SHRED AND WIPE** to overwrite each eligible file with random bytes before deleting it. Press **Enter** at the confirmation to cancel. The tool reports files it deleted, skipped, or couldn't finish.
+4. When prompted, confirm opening Windows Recovery. In Settings, choose **Rebuild PC** under **Rebuild this PC**. In Cloud rebuild, choose **Remove & sanitize**, then **All disks** if prompted and you intend to erase every disk shown. Review the targets, then select **Sanitize and install**.
+5. Keep the PC plugged in until Windows finishes. If **Remove & sanitize** is missing, blocked, or fails, use IT's approved drive-sanitization method.
 
-Windows
-- Requires PowerShell and (optionally) winget for package operations.
+Windows handles drive sanitization and reinstalls the OS. The feature depends on Windows version, hardware, and management policy. [Microsoft Cloud rebuild instructions](https://support.microsoft.com/en-us/windows/experience/backup-recovery/cloud-rebuild)
 
-Linux
-- Designed for systemd-based distros.
-- Package managers supported: apt, dnf, pacman.
-- Wi-Fi and DNS features use NetworkManager when available.
-- Firewall manager uses UFW (if installed).
+<details>
+<summary>What the automatic pre-clean covers</summary>
 
-If a backend is not detected, the tool will explain what is missing.
+The pre-clean searches default locations in the current Windows profile. It skips the running OS Utils files and Python environment so it can reach Recovery.
 
-## Configuration
+| Data | Examples |
+| --- | --- |
+| Personal folders | Desktop, Documents, Downloads, Pictures, Videos, and Music |
+| Browser profiles | Chrome, Edge, Brave, and Firefox cookies, local sessions, saved passwords, history, and other profile data |
+| App data | VS Code, Teams, Slack, Discord, Zoom, WhatsApp Desktop and Beta, Signal, Telegram, classic Outlook, Thunderbird, and Bitwarden |
+| Developer files | Default Git credential files, SSH keys, and supported configuration files for GitHub CLI, npm, and Python package publishing |
+| Per-user program files | Eligible files in **AppData/Local/Programs**. Programs in the preview may stop working after the pre-clean. |
 
-A config file is stored at:
-- ~/.os-utils/config.json
+Custom paths, other user profiles, credentials held only in Windows Credential Manager, and machine-wide installations are outside the automatic pre-clean. File-level overwrite is best effort and can leave copies in SSD remapped blocks, snapshots, backups, or cloud storage. For the full-device wipe, complete the Windows Recovery step. [NIST media sanitization guidance](https://csrc.nist.gov/pubs/sp/800/88/r2/final)
 
-This file keeps:
-- Startup entries created by this tool
-- Preferred Python path
-- UI settings (emoji on/off)
+</details>
 
-You can edit the file manually if needed.
+Local erasure leaves online account sessions active. Revoke the old device's sessions and rotate any exposed credentials from a trusted device. For WhatsApp, use **Linked devices** on your phone. [WhatsApp unlink instructions](https://faq.whatsapp.com/834124628020911/)
 
-## Notes and limitations
+### Selected files and Linux handoff
 
-- Wi-Fi password lookup on Linux requires NetworkManager.
-- DNS reset is supported for Windows and NetworkManager. For systemd-resolved or resolv.conf fallback, the tool only applies changes, not automatic rollback.
-- Startup removal only tracks entries created by OS Utils; it does not scan every system startup location.
-- Python uninstall is cautious by design. System-managed Pythons are removed only via the OS package manager and may impact the OS.
-- NVIDIA and Docker helpers are wired for Ubuntu-family (drivers, toolkit) and apt or dnf (Docker).
+- **Shred specific files on Windows or Linux:** Choose **Overwrite and delete selected personal files**, enter paths inside your home folder, then press **Enter** on a blank line to finish the list. Confirm the exact phrase shown after the preview. The tool overwrites and deletes eligible files and leaves the folder structure. Close affected apps first and avoid synced folders. Links, mounted locations, and other unsafe entries can stop the preview.
+- **Sanitize a Linux drive:** Use **Show storage devices**, then **Review Linux drive sanitization steps**. Use the approved firmware or offline tool for the specific drive, verify its model and serial number, and check the tool's result before handoff. [NIST media sanitization guidance](https://csrc.nist.gov/pubs/sp/800/88/r2/final)
 
-## Project structure
+## Troubleshooting
 
-- os_utils/cli.py: main menu and category routing
-- os_utils/core/: shared helpers (console, prompts, command runner, platform detection)
-- os_utils/features/: individual features (wifi, dns, swap, startup, etc.)
+| What you see | What to do |
+| --- | --- |
+| **Windows launcher can't install Python** | Check the WinGet message. If WinGet is missing or blocked, install Python through your organization's software portal or the [official Python downloads](https://www.python.org/downloads/windows/), then reopen **run.bat**. |
+| **Linux launcher can't install Python** | Check the package manager output. Install Python 3.9 or newer through your distribution, then rerun **sh run.sh**. |
+| **A feature asks for a missing tool or elevation** | Follow its backend message. Only elevate for features that need it. |
+| **Characters look wrong in the terminal** | Set **ui.emoji** to **false** in the configuration file, then reopen the menu. |
+| **Files are locked or skipped during Master Burn** | Close the affected apps and review the reported paths. Finish the approved device sanitization before returning the laptop. |
 
-## Extending the tool
+OS Utils stores its configuration in **~/.os-utils/config.json**. It tracks startup entries created by the tool, Python preferences, and UI settings. For DNS changes, automatic reset is available on Windows and NetworkManager. Linux fallback changes through systemd-resolved or resolv.conf may require manual restoration.
 
-1) Add a new module in os_utils/features with a `menu(ctx)` entry point.
-2) Use helpers from os_utils/core:
-   - run_cmd, run_powershell
-   - require_admin, confirm_sensitive
-   - select_from_list, prompt_text
-3) Wire the feature into os_utils/cli.py under the appropriate category.
+## Contributing
 
-Keep features isolated per file so they remain easy to extend and test.
+- [os_utils.py](os_utils.py) starts the program.
+- [os_utils/cli.py](os_utils/cli.py) defines the main menu and category routing.
+- [os_utils/core/](os_utils/core/) contains shared prompts, configuration, platform detection, and command execution.
+- [os_utils/features/](os_utils/features/) contains the individual tools. Add a **menu(ctx)** entry point and register it under the appropriate category in **cli.py**.
+
+Reuse the shared prompt, privilege, and command helpers. Test destructive workflows with disposable files and mock Recovery launches.

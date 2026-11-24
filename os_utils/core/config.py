@@ -14,27 +14,32 @@ def config_path() -> Path:
 
 
 def load_config(console: Console) -> Dict[str, Any]:
+    defaults = {"startup_entries": [], "python": {}, "ui": {"emoji": True}}
     path = config_path()
-    if not path.exists():
-        return {"startup_entries": [], "python": {}, "ui": {"emoji": True}}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if "startup_entries" not in data:
-            data["startup_entries"] = []
-        if "python" not in data:
-            data["python"] = {}
-        if "ui" not in data:
-            data["ui"] = {"emoji": True}
-        return data
-    except json.JSONDecodeError:
-        console.warn("Config file is invalid. Using defaults.")
-        return {"startup_entries": [], "python": {}, "ui": {"emoji": True}}
+    except FileNotFoundError:
+        return defaults
+    except (OSError, ValueError) as exc:
+        console.warn(f"Could not read config. Using defaults. {exc}")
+        return defaults
+
+    if not isinstance(data, dict):
+        console.warn("Config file must contain an object. Using defaults.")
+        return defaults
+    for key, default in defaults.items():
+        if key in data and not isinstance(data[key], type(default)):
+            console.warn(f"Invalid {key} in config. Using its default.")
+            data[key] = default
+        else:
+            data.setdefault(key, default)
+    return data
 
 
 def save_config(console: Console, config: Dict[str, Any]) -> None:
     path = config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     except OSError as exc:
         console.error(f"Failed to save config: {exc}")
